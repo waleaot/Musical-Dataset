@@ -1,0 +1,708 @@
+---
+title: 'Exploratory analysis of a music dataset'
+date: "2025-11-28"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Introduction
+
+This report presents an exploratory analysis of a music dataset containing audio features, metadata, and popularity measures for a wide range of tracks. The dataset includes variables such as valence,  acousticness, artists, danceability, duration, energy, explicit content, id,  liveness, loudness, mode, name, popularity, speechiness, and tempo.
+
+The analysis focuses on a subset of variables most relevant to understanding musical characteristics and their relationship to popularity: acousticness, artists, danceability, energy,  liveness, loudness, name, popularity, speechiness, tempo, and valence. These features capture both technical aspects of sound (e.g., loudness, tempo, acousticness) and perceptual qualities (e.g., danceability, valence, energy), alongside identifiers and popularity scores.
+The scope of this report includes:
+
+
+The scope of this report includes:
+
+Descriptive statistics to summarize distributions, central tendencies, and variability within the key audio features.
+Data visualizations, including scatterplots, histograms, grouped bar charts, and correlation heatmaps, to highlight relationships and reveal structural patterns within the dataset.
+Trend analysis to examine how musical attributes such as danceability, energy, and valence correspond with popularity, and to assess whether specific sonic qualities are consistently associated with stronger listener engagement.
+
+The outcomes of this analysis aim to provide:
+
+* A clear statistical profile of the dataset’s core musical features.
+* Visual evidence of trends that may inform future modeling, prediction tasks, or deeper exploration of listener behavior.
+
+By integrating descriptive statistics with graphical exploration in R, this report seeks to uncover meaningful connections between musical attributes and popularity, offering both technical rigor and interpretive insight into the dynamics shaping contemporary music data.
+
+## Data Import and setup 
+
+
+```{r}
+
+#load the libraries
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(psych)
+library(corrplot)
+
+
+```
+
+#### The libraries & their main functionality. 
+
+readr : This is for Fast and friendly functions for reading rectangular data (CSV, TSV, etc.) into R.
+dplyr : This is for Grammar of data manipulation for filtering, grouping, summarising, and transforming data sets.
+ggplot2 : This is for Powerful system for creating elegant, layered data visualizations based on the grammar of graphics.
+tidyr: This helps to organize messy data sets into a clean, structured format that’s easier to analyze and visualize.
+psych :This is for Tools for psychological research, including descriptive statistics, reliability analysis, and factor analysis.
+corrplot : This is Functions to visualize correlation matrices with customizable plots and color schemes.
+
+
+
+## libraries justification
+
+We would be using those libraries to analyse the data & to draw meaning from the data. The selected libraries are what is going to help us acheive this purpose. 
+
+
+### Load the dataset data.csv 
+
+```{r}
+
+# bring in the data set
+data <- read.csv("data.csv", header = T)
+
+#show a sample of the set 
+
+head(data,5)
+
+```
+
+
+### Describe the dimensions and the structure of the dataset.
+
+
+```{r}
+# get the datatypes of the df
+str(data)
+
+```
+
+The data consists of 19 columns and 170653 rows.
+They all have the appropriate data types. No data types changes is needed. 
+
+
+### Extracting columns of interests
+
+We would now work with the variables of interests, which are: 
+
+acousticness, artists, danceability, energy, id, liveness, loudness, name, popularity, speechiness, tempo, valence
+
+
+```{r}
+
+# save the variables of interest into a new df - data_sub
+
+data_sub <- data %>% select (acousticness, artists, danceability, energy, id, liveness, loudness, name, popularity, speechiness, tempo, valence)
+
+#view a sample of the new df
+head(data_sub,5)
+
+```
+
+Our new data frame has 12 columns. number of rows remains the same. 
+
+re-examine the data types
+
+```{r}
+# another look at the data types of the new df
+str(data_sub)
+
+```
+All columns have the appropriate data. However, We need to clean the artist column, as it contains some special formatting. We need to remove the "[" &  "]" before and after an artist name. 
+
+
+### Check for missing data
+
+```{r}
+
+colSums(is.na(data_sub))
+# if outcome are 0, it means no missing data
+
+```
+There are no missing data in the data set. 
+
+
+### Clean the artists column
+
+```{r}
+
+# clean artist column
+data_sub$artists <- gsub("\\['|']","", data_sub$artists)
+
+# view the df
+head(data_sub)
+
+
+```
+The data set is in shape now. 
+Next thing to do is to check for duplicates. 
+
+### Check for duplicates
+
+As this is a musical data, special diligence needs to be taken, especially when it comes to dealing with duplicates. A name of a song maybe traceable to many artists. 
+Meaning that the title of one song could be the same title for various artists, but such song would only be duplicated if the name is repeated in the name column and the artist name is the same. 
+Hence, we have defined the 'duplicate' rule. 
+
+```{r}
+
+#Check if there are any duplicates song
+
+
+data_sub %>%
+  group_by(name, artists) %>%
+  filter(n() > 1) %>%
+  summarise(.groups = "drop") %>%
+  select(name, artists)%>%
+  #display top 10 rows
+  slice_head(n = 10)
+
+
+```
+
+Listed above are the duplicates names that met the criteria we have described. We are going to be removing these duplicates, and leave one instance (original copy) of them. 
+
+```{r}
+#get a count of the duplicated names
+
+data_sub %>%
+  count(name, artists) %>%
+  filter(n > 1) %>%
+  summarise(total_duplicates = sum(n - 1))
+
+```
+
+
+There are 12,968 duplicates. 
+Duplicates here means both the artist & name are the same & they appear more than once.
+
+
+##Drop the duplicates
+
+```{r}
+# removes duplicates based on both columns, but keeps all other 
+
+data_sub_unique <- data_sub %>%
+  distinct(name, artists, .keep_all = TRUE)
+
+#view the unique df
+head(data_sub_unique)
+
+
+```
+
+
+
+### Descriptive statistics
+
+We are going to be Summarizing the data using the appropriate statistical methods for numerical and categorical data
+
+Below are the descriptive statistics  for the numerical variables
+
+```{r}
+
+## Descriptive statistics  for the numerical variables
+# they include: acousticness, danceability, energy, loudness, popularity, speechiness, tempo, valence
+
+
+data_sub_unique %>%
+  summarise_if(
+    is.numeric,
+    list(
+      mean = ~mean(.),
+      sd   = ~sd(.),
+      min  = ~min(.),
+      max  = ~max(.)
+    )
+  ) %>%
+  gather(key, value) %>%
+  separate(key, into = c("variable", "stat"), sep = "_") %>%
+  spread(stat, value)
+
+#Produces mean, standard deviation, min, max for each numeric column.
+
+```
+### Interpretation
+
+ The table above produces the mean (average), standard deviation, the minimum value & the maximum value for the numerical variables - acousticness, danceability, energy, loudness, popularity, speechiness, tempo, valence. 
+ 
+ 
+Loudness is the only variable with a minimum less than 0. 
+ 
+ 
+### Categorical variable summarization 
+
+```{r}
+
+# For Categorical Columns
+
+#Check frequency counts
+# How many times each artist appears.
+
+data_sub_unique %>%
+  count(artists, sort = TRUE)%>%
+  #show top 5 rows
+  slice_head(n = 5)
+
+
+```
+
+We can see the artist with the most number of songs, the table is sorted from the highest to the lowest. 
+
+```{r}
+
+#artist vs popualrtiy
+
+
+data_sub_unique %>%
+  group_by(artists) %>%
+  summarise(
+    count = n(),
+    avg_popularity = mean(popularity, na.rm = TRUE)
+  ) %>%
+  arrange(desc(avg_popularity)) %>%
+  #show top 10 rows
+  slice_head(n = 10)
+
+```
+
+A breakdown of artist by their average popularity score. Artist with singular occurrence are leading the average popularity score board.
+
+
+```{r}
+#how many times each artist appears
+
+data_sub_unique %>%
+  summarise(
+    unique_artists = n_distinct(artists),
+    unique_names = n_distinct(name),
+    most_common_artist = names(sort(table(artists), decreasing = TRUE))[1]
+  )
+  
+
+```
+
+There are a total of 34,088 artists with 133,637 unique names (song titles). The most common artist is Эрнест Хемингуэй
+
+```{r}
+
+data_sub_unique %>%
+  group_by(artists) %>%
+  summarise(
+    avg_popularity = mean(popularity, na.rm = TRUE),
+    avg_energy = mean(energy, na.rm = TRUE),
+    song_count = n()
+  ) %>%
+  arrange(desc(avg_energy)) %>%
+#show top 10 rows  
+  slice_head(n = 10)
+
+
+```
+
+
+## Data Visualisation
+
+We shall be providing visual insights into the data. 
+
+```{r}
+
+# histograms and density plots to see how features are spread.
+
+# Histogram of popularity
+ggplot(data_sub_unique, aes(x = popularity)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Popularity",
+       x = "Popularity",
+       y = "Count")
+
+# Density plot of energy
+ggplot(data_sub_unique, aes(x = energy)) +
+  geom_density(fill = "darkblue", alpha = 0.5) +
+  labs(title = "Density Plot of Energy",
+       x = "Energy",
+       y = "Density")
+
+
+```
+
+### Interpretation
+
+
+The histogram shows a right-skewed distribution of popularity scores, meaning that the majority of tracks in the data set have low popularity, while only a small fraction achieve high popularity. The most frequent score is 0, with over 30,000 tracks falling into this category, indicating that many songs receive little to no engagement or recognition. As the popularity score increases, the number of tracks decreases steadily, suggesting that highly popular songs are rare in the data set. 
+
+The density plot shows how energy values are distributed across the data set, with energy ranging from 0 (very calm) to 1 (very intense). The curve peaks around 0.25, indicating that most tracks in the data set have low to moderate energy levels. This suggests that the collection leans toward softer, less aggressive music, such as acoustic, or chill genres.
+
+As the energy value increases beyond 0.25, the density gradually declines, meaning fewer songs exhibit high energy. The smooth tapering of the curve toward the upper end implies that high-energy tracks are less common, but not absent. There’s no sharp drop or multiple peaks, which indicates a continuous and unimodal distribution — most songs fall within a similar energy range without distinct subgroups.
+
+
+
+```{r}
+
+#Compare distributions of popularity across energy quartiles.
+
+# Create energy quartiles
+data_sub_unique$energy_bin <- cut(data_sub_unique$energy,
+                           breaks = quantile(data_sub$energy, probs = seq(0,1,0.25), na.rm = TRUE),
+                           include.lowest = TRUE)
+
+ggplot(data_sub_unique, aes(x = energy_bin, y = popularity)) +
+  geom_boxplot(fill = "lightgreen") +
+  labs(title = "Popularity Across Energy Quartiles",
+       x = "Energy Quartile",
+       y = "Popularity")
+
+
+```
+## Interpretation
+
+Boxplots to compare the distribution of popularity scores across four energy quartiles. Each quartile represents a range of energy values.
+The Boxplots show how popularity varies with energy levels.
+
+[0, 0.255] = Low energy 
+
+(0.255, 0.471] = Moderately low energy
+
+(0.471, 0.703] = Moderately high energy
+
+(0.703, 1] = High energy
+
+The highest median appears in the third quartile (moderately high energy), suggesting that songs with a balanced energetic feel tend to be more popular.
+The lowest median is in the lowest energy quartile, indicating that very mellow songs are generally less popular.
+
+#### Spread and Outliers:
+
+The third quartile also shows a tight interquartile range (IQR), meaning popularity scores are more consistently high.
+The highest energy quartile has a wider spread, with some very popular outliers but also many less popular tracks — suggesting high energy alone doesn’t guarantee popularity.
+The lowest energy quartile has a few high-popularity outliers, but most songs cluster at lower popularity levels.
+
+### Summary
+ Moderate-to-high energy songs tend to be more consistently popular.
+ Extremely high or low energy songs show greater variability, with some hits but many misses.
+ 
+
+
+
+### Visualizing relationships between continuous variables
+
+```{r}
+
+# Reshape data to long format
+data_long <- data_sub %>%
+  select(acousticness, danceability, energy, loudness, speechiness, tempo, valence, popularity) %>%
+  pivot_longer(cols = -popularity, names_to = "feature", values_to = "value")
+
+# Create faceted scatter plot
+ggplot(data_long, aes(x = value, y = popularity)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  facet_wrap(~ feature, scales = "free_x") +
+  labs(title = "Scatter Plots of Audio Features vs Popularity",
+       x = "Feature Value",
+       y = "Popularity") +
+  theme_minimal()
+```
+Above is a composite graph, that shows the scatter plots of the continuous variables. Each of them showing how the other 8 variables relates to popularity.
+
+We will examine 3 of them, close up. 
+
+#### (a.) Danceability vs Valence
+
+```{r}
+# Danceability vs Valence
+
+ggplot(data_sub_unique, aes(x = danceability, y = valence, color = popularity)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Danceability vs Valence",
+       x = "Danceability",
+       y = "Valence",
+       color = "Popularity")
+```
+
+### interpretation
+
+Most points are concentrated in the mid-to-high range for both danceability and valence, suggesting that many songs are both danceable and emotionally positive.
+Darker blue points (higher popularity) tend to cluster in the upper-right quadrant where both danceability and valence are high. This implies that danceable songs are more likely to be popular.
+Lighter blue points appear more frequently in the lower-left quadrant, where songs are less danceable and less positive these tend to be less popular.
+
+There's a positive association between danceability, valence, and popularity. Tracks that are both upbeat and emotionally bright tend to attract more listeners.
+
+#### (b.) Energy vs Loudness
+
+```{r}
+
+#Energy vs Loudness
+ ggplot(data_sub_unique, aes(x = energy, y = loudness, color = popularity)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Energy vs Loudness",
+       x = "Energy",
+       y = "Loudness",
+       color = "Popularity") +
+  theme_minimal()
+
+
+```
+
+
+### Interpretation
+
+Many popular tracks (dark blue) cluster in the upper-right quadrant, where both danceability and valence are high.. This suggests that danceable songs tend to be more popular.
+Tracks with low valence and low danceability (bottom-left quadrant) are mostly light blue, indicating lower popularity.These may be slower, moodier, or more experimental songs that appeal to niche audiences.
+There's a wide spread of popularity in the mid-range of both features, showing that not all moderately danceable or moderately positive songs are hits — other factors likely influence popularity
+
+
+#### (C.) Speechiness vs Acousticness
+
+```{r}
+
+# Speechiness vs Acousticness
+ggplot(data_sub_unique, aes(x = speechiness, y = acousticness, color = popularity)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Speechiness vs Acousticness",
+       x = "Speechiness",
+       y = "Acousticness",
+       color = "Popularity") +
+  theme_minimal()
+
+```
+### interpretation
+
+Most tracks cluster in the low-to-mid speechiness and mid-to-high acousticness range.This suggests that many songs are moderately acoustic and contain limited spoken-word elements.
+High popularity (dark blue) points are scattered, but tend to appear more in the low speechiness / mid acousticness zone indicating that popular songs often have musical richness without being overly speech-heavy.
+Tracks with very high speechiness  and low acousticness are mostly light blue — these may be rap or spoken-word tracks with electronic production, which appear less popular.
+
+### Top 10 artist by average popularity
+
+```{r}
+#bar plot
+data_sub_unique %>%
+  group_by(artists) %>%
+  summarise(avg_popularity = mean(popularity, na.rm = TRUE),
+            count = n()) %>%
+  arrange(desc(count)) %>%
+  slice(1:10) %>%
+  ggplot(aes(x = reorder(artists, avg_popularity), y = avg_popularity)) +
+  geom_bar(stat = "identity", fill = "dark green") +
+  coord_flip() +
+  labs(title = "Top 10 Artists by Average Popularity",
+       x = "Artists",
+       y = "Average Popularity")
+
+```
+
+### interpretation
+
+The Rolling Stones, Elvis Presley, Bob Dylan, Frank Sinatra, The Beach Boys, and Johnny Cash dominate the chart with average popularity scores between 25 and 40.
+
+
+
+
+## Relationship and Trend Analysis
+
+
+We shall now investigate relationships among numeric audio features using a correlation heatmap, revealing how attributes like energy, danceability, valence, and loudness interact. 
+
+
+```{r}
+
+
+# Select only numeric columns
+num_cols <- data_sub_unique %>%
+  select(acousticness, danceability, energy, loudness,
+         popularity, speechiness, tempo, valence)
+
+# Compute correlation matrix
+cor_matrix <- cor(num_cols, use = "complete.obs")
+
+# Plot heatmap
+corrplot(cor_matrix, method = "color", type = "upper",
+         tl.col = "black", tl.srt = 45,
+         addCoef.col = "black",
+         title = "Correlation Heatmap of Audio Features",
+         mar = c(0,0,2,0))
+
+```
+
+Each cell represents the Pearson correlation coefficient between two numeric features.
+Blue = positive correlation (features increase together)
+Red = negative correlation (one increases, the other decreases)
+White = near-zero correlation (no strong relationship)
+
+Acousticness and energy have a strong negative correlation (−0.75), indicating that more acoustic tracks tend to be less energetic.  
+Acousticness and loudness show a strong negative correlation (−0.56), suggesting that acoustic songs are generally quieter.  
+Acousticness and popularity are moderately negatively correlated (−0.57), meaning acoustic tracks are less likely to be popular.  
+Acousticness and danceability have a weak negative correlation (−0.27), implying that acoustic songs are slightly less danceable.  
+Acousticness and tempo show a weak negative correlation (−0.21), suggesting that acoustic tracks tend to have slower tempos.  
+Acousticness and valence have a weak negative correlation (−0.18), indicating that acoustic songs are slightly less emotionally positive.  
+Acousticness and speechiness show no meaningful correlation (−0.04), meaning these features vary independently.
+
+Danceability and valence have a moderate positive correlation (0.56), suggesting that more danceable songs tend to sound happier.  
+Danceability and loudness show a weak positive correlation (0.29), indicating that danceable songs are slightly louder.  
+Danceability and energy have a weak positive correlation (0.22), meaning danceable songs are slightly more energetic.  
+Danceability and speechiness show a weak positive correlation (0.20), suggesting that danceable songs may contain more spoken elements.  
+Danceability and tempo have a weak positive correlation (0.20), indicating that faster songs tend to be more danceable.  
+Danceability and popularity show no meaningful correlation (0.02), suggesting that danceability alone does not predict popularity.
+
+Energy and loudness have a strong positive correlation (0.78), indicating that louder songs are typically more energetic.  
+Energy and popularity show a moderate positive correlation (0.49), meaning energetic songs tend to be more popular.  
+Energy and valence have a weak positive correlation (0.30), suggesting that energetic songs are slightly more emotionally positive.  
+Energy and tempo show no meaningful correlation (0.05), indicating that energy and tempo vary independently.  
+Energy and speechiness show no meaningful correlation (−0.01), meaning energy and speechiness are unrelated.
+
+Loudness and popularity have a moderate positive correlation (0.46), suggesting that louder songs tend to be more popular.  
+Loudness and valence show a weak positive correlation (0.27), indicating that louder songs are slightly more emotionally positive.  
+Loudness and tempo have a very weak positive correlation (0.10), suggesting that louder songs may be slightly faster.  
+Loudness and speechiness show a weak negative correlation (−0.14), meaning louder songs tend to have less spoken content.
+
+Popularity and energy have a moderate positive correlation (0.49), indicating that popular songs tend to be energetic.  
+Popularity and loudness show a moderate positive correlation (0.46), suggesting that popular songs are generally louder.  
+Popularity and acousticness have a moderate negative correlation (−0.57), meaning acoustic songs are less popular.  
+Popularity and speechiness show a weak negative correlation (−0.17), indicating that songs with more spoken content are slightly less popular.  
+Popularity and tempo have a very weak positive correlation (0.13), suggesting a slight tendency for faster songs to be more popular.  
+Popularity and valence show no meaningful correlation (0.05), indicating that emotional positivity has little impact on popularity.  
+Popularity and danceability show no meaningful correlation (0.02), suggesting that danceability does not strongly influence popularity.
+
+
+### Correlation matrix
+ 
+```{r}
+# corr matrix
+num_cols <- c("acousticness","danceability","energy","liveness",
+              "loudness","speechiness","tempo","valence","popularity")
+
+cor_matrix <- cor(data_sub_unique[, num_cols], use = "complete.obs")
+
+# Correlations with popularity
+cor_matrix[,"popularity"]
+
+```
+## interpretation
+
+
+Variable     Correlation with Popularity  
+
+acousticness = -0.57  
+danceability = +0.19  
+energy       = +0.48  
+liveness     = -0.08  
+loudness     = +0.45  
+speechiness  = -0.18  
+tempo        = +0.13  
+valence      = +0.003  
+popularity   = 1.00 (self-correlation)  
+
+  
+Energy (+0.48): Popular songs tend to be more energetic.  
+Loudness (+0.45): Popular tracks are generally louder.  
+Acousticness (–0.57): Higher acoustic tracks are less popular. Popular music tends to be more electronic or produced.  
+
+Danceability (+0.19): A small positive relationship—popular songs are slightly more danceable.  
+Speechiness (–0.18): Tracks with more spoken word content tend to be slightly less popular overall.  
+Tempo (+0.13): Slight trend—faster songs are a bit more popular, but not strongly.  
+Liveness (–0.08): Whether a track sounds “live” has almost no relationship with popularity.  
+Valence (+0.003): Basically no relationship—happiness/positivity of a song doesn’t predict popularity in your dataset.  
+
+
+
+```{r}
+#barplot
+
+data_sub_unique %>%
+  group_by(energy_bin) %>%
+  summarise(avg_popularity = mean(popularity, na.rm = TRUE)) %>%
+  ggplot(aes(x = energy_bin, y = avg_popularity, fill = energy_bin)) +
+  geom_col() +
+  labs(title = "Average Popularity by Energy Bin")
+```
+### Interpretation
+
+The bars show a strong upward trend: as energy increases, average popularity also increases.
+
+
+[0, 0.255] signifies Very low-energy songs with Low popularity (16)      
+| (0.255, 0.471] signifies  Low-energy songs with Higher (27)               
+| (0.471, 0.703] signifies Medium-energy songs with Even higher (39)          
+| (0.703, 1] signifies High-energy songs with Highest (44)           
+
+1. Strong positive relationship  
+The pattern confirms the correlation result: higher-energy songs tend to be more popular.  
+The rise in popularity is consistent and nearly linear across the bins.
+
+2. Very low-energy songs are much less popular  
+Songs in the lowest energy bracket have the lowest average popularity, suggesting:  
+Softer, calmer, acoustic, or ambient tracks are less favored by listeners in the dataset.
+
+3. High-energy songs dominate popularity  
+Songs with energy greater than 0.703 have the highest average popularity, indicating Upbeat, intense, lively tracks perform best on streaming platforms.
+
+
+The bar chart provides visual validation that energy is one of the strongest predictors of popularity. The more energetic a song is, the more likely it is to attract a larger audience.
+
+
+## Insights and Interpretation
+
+This exploratory analysis looked at key audio features in the dataset to understand how different musical characteristics relate to track popularity. By examining variables such as acousticness, danceability, energy, loudness, tempo, valence, and speechiness, the study provided both statistical and visual insights into how these features are distributed and how they interact.
+
+The descriptive statistics showed wide variation across features, while the visualizations revealed clear patterns. For example, popularity was heavily skewed, with most tracks receiving little attention and only a small number achieving high visibility. Scatterplots and density plots highlighted clusters of popular songs within certain ranges of danceability, valence, and loudness.
+
+A key part of the analysis was exploring correlations between features and popularity. Energy (+0.48) and loudness (+0.45) emerged as the strongest positive predictors, while acousticness (−0.57) showed the strongest negative relationship. This suggests that popular songs in the dataset tend to be energetic, loud, and less acoustic. Other features such as tempo, danceability, speechiness, and valence showed only weak or negligible relationships, meaning they are not strong predictors of success on their own.
+
+Trend analysis supported these findings. When songs were grouped into energy bins, average popularity increased steadily with higher energy levels. Medium- to high-energy tracks consistently outperformed low-energy songs, showing that listeners tend to prefer vibrant and dynamic compositions. While some low-energy songs did achieve popularity, they were exceptions rather than the rule.
+
+Key Findings  
+Energy and loudness are the strongest indicators of popularity. Songs that sound powerful and intense attract more listeners.  
+Acousticness is negatively related to popularity, meaning highly acoustic or stripped-down tracks are less dominant commercially.  
+Danceability, tempo, valence, and speechiness have only minor influence on popularity.  
+Popularity is concentrated, with most tracks receiving low engagement and only a few achieving high visibility.  
+Medium-high energy songs show the most consistent popularity, while very high or very low energy songs produce mixed results.  
+
+## Conclusion  
+
+The study shows that modern popular music is strongly shaped by energetic and loud production qualities. While features like danceability and valence add to a song’s character, they are not strong predictors of popularity on their own. Instead, intensity and sonic power are the most influential drivers.  
+
+These insights can support further research, such as predictive modeling to forecast song popularity, and may also help producers, artists, and marketers understand the traits most associated with successful tracks. Overall, the analysis demonstrates how measurable audio features can provide meaningful understanding of listener engagement and music consumption.  
+
+
+
+
+
+## References
+
+
+Wickham, H., & Grolemund, G. (2016). *R for Data Science: Import, Tidy, Transform, Visualize, and Model Data.* O’Reilly Media.  
+  https://r4ds.had.co.nz  
+
+Wickham, H. (2014). *Tidy Data.* Journal of Statistical Software, 59(10), 1–23.  
+  https://www.jstatsoft.org/article/view/v059i10  
+
+Mukaka, M. M. (2012). *A guide to appropriate use of correlation coefficient in medical research.* Malawi Medical Journal, 24(3), 69–71.  
+  https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3576830/  
+
+Dancey, C., & Reidy, J. (2004). *Statistics Without Maths for Psychology.* Pearson Education.  
+  https://www.pearson.com/en-us/subject-catalog/p/statistics-without-maths-for-psychology/P200000006845  
+
+Wickham, H. (2016). *ggplot2: Elegant Graphics for Data Analysis.* Springer-Verlag New York.  
+  https://ggplot2-book.org/  
+
+Wilkinson, L. (2005). *The Grammar of Graphics.* Springer.  
+  https://link.springer.com/book/10.1007/0-387-28695-0  
+
+Tukey, J. W. (1977). *Exploratory Data Analysis.* Addison-Wesley.  
+  https://archive.org/details/exploratorydataa0000tuke  
+
+Murrell, P. (2018). *Data Graphics Using R: A Researcher’s Guide.* CRC Press.  
+  https://www.routledge.com/Data-Graphics-Using-R-A-Researchers-Guide/Murrell/p/book/9780367571998  
+
+
+
+
